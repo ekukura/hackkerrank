@@ -1,0 +1,1 @@
+WARNING:root:'Scrapper' object has no attribute 'HEADERS'
