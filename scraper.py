@@ -84,6 +84,8 @@ class Scrapper:
             print("Saving to {}".format(file_path))
             if not os.path.exists(dir): #os.path.isdir(dir):
                 os.makedirs(dir)
+                if not os.path.isfile(file_path):
+                    print("New file: {}".format(file_path))
                 print(code, file=open(file_path, 'w'))
             else:
                 print(code, file=open(file_path, 'w'))
@@ -109,7 +111,6 @@ class Scrapper:
         
 if __name__ == "__main__":
     
-    #import ipdb; ipdb.set_trace()
     start = time.time()
     conf = {}
     with open("credentials.json", "r") as f:
