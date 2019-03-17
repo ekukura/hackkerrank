@@ -13,7 +13,7 @@ logging.basicConfig(filename="logs.txt")
 class Scrapper:
 
     PREFIX = "_"
-    def __init__(self, conf):
+    def __init__(self, conf, ONLY_NEW=False, debug=False):
         self.submissions = None
         self.HEADERS = {
             'x-csrf-token': conf["CSRF_TOKEN"],
@@ -29,6 +29,9 @@ class Scrapper:
             'text': '.txt'
         } 
         self.created_files = 0
+        self.only_new = ONLY_NEW
+        self.debug = debug
+        self.current_files = set()
     
     def get_all_submissions(self):
         limit = 1000
@@ -50,6 +53,8 @@ class Scrapper:
             challenge_id = submission['challenge_id']
             cur_submission = {
                 "sub_id": submission["id"],
+                "name": submission["challenge"]["slug"],
+                "language": submission['language'],
                 "score": float(submission['score']),
                 "time": submission["inserttime"]
             }
@@ -63,47 +68,71 @@ class Scrapper:
             self.submissions[challenge].sort(key=lambda sub: (sub['score'], sub['time']), reverse=True)
     
     
-    def create_file(self, sub_id):
+    def create_file(self, sub_id, name):
         # generate code file for the submission 
         submission_url = BASE_URL + "submissions/{}".format(sub_id)
-        res = requests.get(url=submission_url, headers=self.HEADERS).json()
-        response = res['model']
-        code = response['code']
-
-        if code:
-            challenge_name = response['challenge_slug']
-            track = response['track']
-            track_name = track['track_slug']
-            subdomain_name = track['slug']
-            language = response['language']
-        
-            extension = self.file_extensions[language]     
-            filename = challenge_name + extension    
-            dir = os.path.join(self.PREFIX+track_name, subdomain_name)
-            file_path = os.path.join(dir, filename)
-            print("Saving to {}".format(file_path))
-            if not os.path.exists(dir): #os.path.isdir(dir):
-                os.makedirs(dir)
-                if not os.path.isfile(file_path):
-                    print("New file: {}".format(file_path))
-                print(code, file=open(file_path, 'w'))
-            else:
-                print(code, file=open(file_path, 'w'))
-            self.created_files += 1   
+        if self.debug: 
+            print("Dry run - not obtaining info for {name} ({id})".format(
+                name=name, id=sub_id))
+        else:
+            res = requests.get(url=submission_url, headers=self.HEADERS).json()
+            response = res['model']
+            code = response['code']
+    
+            if code:
+                challenge_name = response['challenge_slug']
+                track = response['track']
+                track_name = track['track_slug']
+                subdomain_name = track['slug']
+                language = response['language']
+            
+                extension = self.file_extensions[language]     
+                filename = challenge_name + extension    
+                dir = os.path.join(self.PREFIX+track_name, subdomain_name)
+                file_path = os.path.join(dir, filename)
+                print("Saving to {}".format(file_path))
+                if not os.path.exists(dir): #os.path.isdir(dir):
+                    os.makedirs(dir)
+                    if not os.path.isfile(file_path):
+                        print("New file: {}".format(file_path))
+                    print(code, file=open(file_path, 'w'))
+                else:
+                    print(code, file=open(file_path, 'w'))
+                self.created_files += 1   
+    
+    def set_current_files(self):
+        cdir = os.getcwd()
+        dirs = os.listdir(cdir)
+        for d in dirs:
+            if d.startswith(self.PREFIX):
+                domains  = os.listdir(d)
+                for domain in domains:
+                    files = os.listdir("{}/{}".format(d,domain))
+                    self.current_files = set.union(self.current_files, set(files)) 
+        print("Found {} current submission files".format(len(self.current_files)))
     
     def scrape(self):
+        # import ipdb; ipdb.set_trace()
         self.set_submissions()
+        if self.only_new:
+            self.set_current_files()
         # now, pull out for each challenge the sub_id associated
         # with the most successful, most recent submission
         recent_submissions = list()
         for challenge in self.submissions:
             challenge_submissions = self.submissions[challenge]
-            recent_submissions.append(challenge_submissions[0]['sub_id'])
+            most_successful_submission = challenge_submissions[0]
+            challenge_extension = self.file_extensions[most_successful_submission['language']]
+            already_solution = most_successful_submission['name'] + challenge_extension in self.current_files
+            if not self.only_new or not already_solution:
+                recent_submissions.append(
+                    (most_successful_submission['sub_id'], most_successful_submission['name'])
+                )
         
-        print("found submissions for {} challenges".format(len(recent_submissions)))
+        print("Found submissions for {} challenges".format(len(recent_submissions)))
         
         pool = ThreadPool()
-        pool.map(lambda sub_id: self.create_file(sub_id), recent_submissions)
+        pool.map(lambda submission: self.create_file(*submission), recent_submissions)
         # for sub_id in recent_submissions:
             # self.create_file(sub_id)
 
@@ -111,12 +140,14 @@ class Scrapper:
         
 if __name__ == "__main__":
     
+    ONLY_NEW = True
+    debug =  False
     start = time.time()
     conf = {}
     with open("credentials.json", "r") as f:
         conf = json.load(f)
 
-    scrapper = Scrapper(conf)
+    scrapper = Scrapper(conf, ONLY_NEW, debug)
     try:    
         scrapper.scrape()
         
