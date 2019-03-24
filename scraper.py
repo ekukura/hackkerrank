@@ -93,8 +93,6 @@ class Scrapper:
                 print("Saving to {}".format(file_path))
                 if not os.path.exists(dir): #os.path.isdir(dir):
                     os.makedirs(dir)
-                    if not os.path.isfile(file_path):
-                        print("New file: {}".format(file_path))
                     print(code, file=open(file_path, 'w'))
                 else:
                     print(code, file=open(file_path, 'w'))
